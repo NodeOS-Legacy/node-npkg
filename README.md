@@ -24,6 +24,8 @@ Commands:
 Installing via `npkg install` is a lot like `npm install -g`,
 except `npkg` *only* installs the package for the current user.
 Packages are installed to `$HOME/lib/node_modules` and binaries are linked to `$HOME/bin`.
+NodeOS will have a very minimal set of executables outside of `$HOME/bin`,
+thus a users command-line experience is almost completely isolated from other users on the system.
 
 Removing a package *only* removes it for the current user.
 Packages and linked binaries are always partitioned by user,
