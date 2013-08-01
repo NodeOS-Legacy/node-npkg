@@ -37,3 +37,4 @@ Packages can expose services as well as binaries.
 Calling `npkg start PACKAGE` is the same as calling `npm start`,
 only the stared service is run by init and daemonized.
 
+Calling `npkg start` will *always* resolve packages installed to `$HOME/lib/node_modules`.
