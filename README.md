@@ -39,4 +39,6 @@ Packages can expose services as well as binaries.
 Calling `npkg start PACKAGE` is the same as calling `npm start`,
 only the stared service is run by init and daemonized.
 
-Calling `npkg start` will *always* resolve packages installed to `$HOME/lib/node_modules`.
+The `npkg start` command can resolve both global and local packages.
+Local packages start with either `./` or `/` and are resolved as relative or absolute URLs.
+Global packages are resolved under `$HOME/lib/node_modules`.
