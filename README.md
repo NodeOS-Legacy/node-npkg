@@ -42,3 +42,19 @@ only the stared service is run by init and daemonized.
 The `npkg start` command can resolve both global and local packages.
 Local packages start with either `./` or `/` and are resolved as relative or absolute URLs.
 Global packages are resolved under `$HOME/lib/node_modules`.
+
+**Start a Relative Package**
+```
+$ cd ~
+$ npkg start ./myapp
+--> starting ~/myapp
+--> reading ~/myapp/package.json
+```
+
+**Start a Global Package**
+```
+$ cd ~
+$ npkg start myapp
+--> starting ~/lib/node_modules/myapp
+--> reading ~/lib/node_modules/myapp/package.json
+```
