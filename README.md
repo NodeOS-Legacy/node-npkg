@@ -58,3 +58,18 @@ $ npkg start myapp
 --> starting ~/lib/node_modules/myapp
 --> reading ~/lib/node_modules/myapp/package.json
 ```
+
+## Programatic API
+
+Access `npkg` programatically:
+
+```
+var npkg = require('npkg');
+npkg.install(package, function(err,ok){
+  // 
+});
+npkg.start(package, function(err,ok){
+  //
+});
+```
+
