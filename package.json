@@ -1,0 +1,14 @@
+{
+  "name": "bin-npkg",
+  "version": "0.0.0",
+  "description": "",
+  "bin": {
+    "npkg": "npkg.js"
+  },
+  "repository": "",
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "npm": "~1.3.11"
+  }
+}
