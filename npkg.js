@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 
-var fs = require('fs');
-var pp = require('path');
-var spawn = require('child_process').spawn;
-var http = require('http');
+var fs           = require('fs');
+var pp           = require('path');
+var spawn        = require('child_process').spawn;
+var http         = require('http');
+var PORT         = process.env.PORT || 1;
+var command      = process.argv[2];
 
-var command = process.argv[2];
-
-var root = process.env.HOME;
+var root         = process.env.HOME;
 var node_modules = pp.join(root,'lib/node_modules');
 var node_bins    = pp.join(root,'bin');
 
@@ -38,17 +38,22 @@ Controller.prototype.start = function(pkg){
   
   var req = http.request({
     hostname: '127.0.0.1',
-    port: 1,
-    path: '/job',
-    method: 'post'
+    port: PORT,
+    path: '/job/' + pkg,
+    method: 'put'
   });
   req.write(JSON.stringify(job));
   req.end();
   
 }
 
-Controller.prototype.stop = function(){
-  
+Controller.prototype.stop = function(pkg){
+  var req = http.request({
+    hostname: '127.0.0.1',
+    port: PORT,
+    path: '/job/' + pkg + '/sig/SIGQUIT',
+    method: 'put'
+  }).end();
 }
 
 Controller.prototype.install = function(arg){
@@ -70,13 +75,15 @@ Controller.prototype.install = function(arg){
 }
 
 Controller.prototype.remove = function(){
-  
+  console.log('(Not Yet Implemented)');
 }
 
 var controller = new Controller();
 
 if(controller[command]){
-  controller[command](process.argv[3]);
+  var target = process.argv[3];
+  if (target) controller[command](target);
+  else console.log('Please Specify Target');
 }else{
-  console.log("Usage: npkg COMMAND");
+  fs.createReadStream(__dirname + "/usage.txt").pipe(process.stdout);
 }
