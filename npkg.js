@@ -56,6 +56,21 @@ Controller.prototype.stop = function(pkg){
   }).end();
 }
 
+function config(path){
+  var configs = {};
+  try {
+    var f = fs.readFileSync(path);  
+    f.trim().split(/\n/).forEach(function (line) {
+      var split = line.trim().split(/\s*=\s*/);
+      if(split.length<2) return;
+      configs[split[0]] = configs[split[1]];
+    });
+  } catch (e) {
+    // nothing
+  }
+  return configs;
+}
+
 Controller.prototype.install = function(arg){
   var npm    = require('npm');
   var home   = process.env.HOME;
@@ -65,6 +80,10 @@ Controller.prototype.install = function(arg){
   },function(err){
     if(err) return console.log("Error",err);
     npm.config.set('global',true);
+    var conf = config(process.env.HOME + '/.npmrc');
+    for(key in conf) {
+      npm.config.set(key, conf[key]);
+    }
     npm.commands.install( arg, function(err,ok){
       if(err) {
         console.log(err);
