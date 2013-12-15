@@ -33,7 +33,8 @@ Controller.prototype.start = function(pkg){
   var job = {
     exec: exec,
     args: args,
-    cwd: pkg_path
+    cwd: pkg_path,
+    env: process.env
   }
   
   var req = http.request({
