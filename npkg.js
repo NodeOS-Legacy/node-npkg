@@ -26,26 +26,25 @@ Controller.prototype.start = function(pkg){
     return console.log('Package %s Has No Start Script or package.json File',pkg);
   
   var pkg_json = JSON.parse( fs.readFileSync(pkg_json_path) );
-  
-  var args = pkg_json.scripts.start.split(/\s+/);
-  var exec = args.shift();
+  var args     = pkg_json.scripts.start.split(/\s+/);
+  var exec     = args.shift();
   
   var job = {
-    exec: exec,
-    args: args,
-    cwd: pkg_path,
-    env: process.env
+    exec     : exec,
+    args     : args,
+    cwd      : pkg_path,
+    env      : process.env
   }
   
   var req = http.request({
-    hostname: '127.0.0.1',
-    port: PORT,
-    path: '/job/' + pkg,
-    method: 'put'
+    hostname : '127.0.0.1',
+    port     : PORT,
+    path     : '/job/' + pkg,
+    method   : 'put'
   });
+
   req.write(JSON.stringify(job));
   req.end();
-  
 }
 
 Controller.prototype.stop = function(pkg){
