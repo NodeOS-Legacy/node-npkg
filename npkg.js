@@ -4,6 +4,10 @@ var fs           = require('fs');
 var pp           = require('path');
 var spawn        = require('child_process').spawn;
 var http         = require('http');
+
+var Config       = require('lib-config');
+var Interp       = require('lib-interpolate');
+
 var PORT         = process.env.PORT || 1;
 var command      = process.argv[2];
 
@@ -11,11 +15,62 @@ var root         = process.env.HOME;
 var node_modules = pp.join(root,'lib/node_modules');
 var node_bins    = pp.join(root,'bin');
 
+var CONFIG_ROOT  = process.env.HOME + '/etc/npkg';
+
+function graceful(file) {
+  var config;
+  try {
+    config = JSON.parse(
+      fs.readFileSync(file, 'utf-8')
+    );
+  } catch (e) {
+    // default empty config
+    config = {};
+  }
+  return config;
+}
+
 function Controller(){
   
 }
 
 Controller.prototype.start = function(pkg){
+
+  // --
+  // -- load environment
+  // --
+
+  var config = new Config();
+
+  // load the default config
+  // load the package specific config
+  config.load(graceful(CONFIG_ROOT + '/config.json'));
+  config.load(graceful(CONFIG_ROOT + '/config/' + pkg + '.json'));
+
+  // interpolated values for the environment variables
+  // each value is expanded wherever %{VAR} is found
+  // e.g. %{home} --> /home/jacob
+  //      %{user} --> jacob
+  var map = {
+    home    : process.env.HOME,
+    user    : process.env.USER,
+    package : pkg
+  };
+  var interp = new Interp(map);
+
+  // envs will hold the environment variables 
+  // of our child process
+  var envs = {};
+  config.keys().forEach(function (key) {
+    // get the config value and interpolate it
+    // against the above map
+    envs[key] = interp.expand(config.get(key));
+  });
+
+  // --
+  // -- child process
+  // --
+
   var pkg_path = pp.join(node_modules,pkg);
   console.log('Calling NPM Start on Package',pkg);
   process.env.NPM_CONFIG_PREFIX = process.env.HOME;
@@ -33,7 +88,7 @@ Controller.prototype.start = function(pkg){
     exec     : exec,
     args     : args,
     cwd      : pkg_path,
-    env      : process.env
+    env      : envs
   }
   
   var req = http.request({
