@@ -4,6 +4,7 @@ var fs           = require('fs');
 var pp           = require('path');
 var spawn        = require('child_process').spawn;
 var http         = require('http');
+var crypto       = require('crypto');
 
 var mkdirp       = require('lib-mkdirp');
 var Config       = require('lib-config');
@@ -61,7 +62,7 @@ Controller.prototype.start = function(pkg){
 
   // this is a relative module
   if (is_rel = is_relative(pkg)) {
-    pkg_path = pp.join(process.cwd(), pkg);
+    pkg_path = pp.resolve(process.cwd(), pkg);
     config.load(process.env);
   }
 
@@ -125,7 +126,7 @@ Controller.prototype.start = function(pkg){
   
   // the 'exec' field of the stanza is copied directly
   // from the start script in package.json
-  var pkg_json_path = pp.join(pkg_path,"package.json");
+  var pkg_json_path = pp.join(pkg_path, "package.json");
   if (!fs.existsSync(pkg_json_path))
     return console.log('Package %s Has No Start Script or package.json File',pkg);
   var pkg_json = JSON.parse( fs.readFileSync(pkg_json_path) );
@@ -140,13 +141,31 @@ Controller.prototype.start = function(pkg){
     env      : envs
   }
 
+  function handle_response(res) {
+    res.pipe(process.stdout);
+  }
+
   // launch http request
+  var key;
+  if (is_rel) {
+    key = pp.basename(pkg)
+          + '-'
+          + crypto.randomBytes(10).toString('hex');
+  } else {
+    key = pkg;
+  }
+  
+  // job options
+  var options = [
+    'stdio=stream'
+  ];
+
   var req = http.request({
     hostname : '127.0.0.1',
     port     : PORT,
-    path     : '/job/' + pkg,
+    path     : '/job/' + key + '?' + options.join('&'),
     method   : 'put'
-  });
+  }, handle_response);
   req.write(JSON.stringify(job));
   req.end();
 
