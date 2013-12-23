@@ -11,6 +11,7 @@ var Config       = require('lib-config');
 var Interp       = require('lib-interpolate');
 
 var PORT         = process.env.PORT || 1;
+var HOST         = process.env.HOST || '127.0.0.1';
 var command      = process.argv[2];
 
 var root         = process.env.HOME;
@@ -18,6 +19,10 @@ var node_modules = pp.join(root,'lib/node_modules');
 
 var CONFIG_ROOT  = process.env.HOME + '/etc';
 
+// try to load a file, and parse it into an object
+// if that fails, just return an empty object
+// this shouldn't throw an error
+// it's a big boy, it deals with it's own problems
 function graceful(file) {
   var config;
   try {
@@ -35,6 +40,10 @@ function Controller(){
   
 }
 
+// is a module relative or global
+// global modules are refered to by name
+// relative modules are refered to with an
+// absolute path, or path starting with ./
 function is_relative(pth) {
   return (pth[0] === '.' || pth[0] === '/');
 }
@@ -180,17 +189,21 @@ Controller.prototype.start = function(pkg){
     }
   };
 
-  function handle_response(res) {
-    res.pipe(process.stdout);
-  }
-  
   // job options
   var options = [
+    // debugging services is a pain in the ass, so we
+    // stream the contents back to npkg
+    // you can ^C at any time to stop receiving output
+    // this in no way affects the job
     'stdio=stream'
   ];
 
+  function handle_response(res) {
+    res.pipe(process.stdout);
+  }
+
   var req = http.request({
-    hostname : '127.0.0.1',
+    hostname : HOST,
     port     : PORT,
     path     : '/job/' + key + '?' + options.join('&'),
     method   : 'put'
