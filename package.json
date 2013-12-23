@@ -1,6 +1,6 @@
 {
   "name": "bin-npkg",
-  "version": "0.1.0",
+  "version": "0.0.2",
   "description": "",
   "bin": {
     "npkg": "npkg.js"
@@ -10,5 +10,8 @@
   "license": "MIT",
   "dependencies": {
     "npm": "~1.3.11"
+  },
+  "peerDependencies": {
+    "bin-init": "~0.1.0"
   }
 }
