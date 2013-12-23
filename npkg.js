@@ -2,7 +2,6 @@
 
 var fs           = require('fs');
 var pp           = require('path');
-var spawn        = require('child_process').spawn;
 var http         = require('http');
 var crypto       = require('crypto');
 
@@ -15,7 +14,6 @@ var command      = process.argv[2];
 
 var root         = process.env.HOME;
 var node_modules = pp.join(root,'lib/node_modules');
-var node_bins    = pp.join(root,'bin');
 
 var CONFIG_ROOT  = process.env.HOME + '/etc';
 
@@ -37,7 +35,7 @@ function Controller(){
 }
 
 function is_relative(pth) {
-  return (pth[0] == '.' || pth[0] == '/');
+  return (pth[0] === '.' || pth[0] === '/');
 }
 
 Controller.prototype.start = function(pkg){
@@ -64,6 +62,15 @@ Controller.prototype.start = function(pkg){
   if (is_rel = is_relative(pkg)) {
     pkg_path = pp.resolve(process.cwd(), pkg);
     config.load(process.env);
+
+    // We leave the environment un-touched,
+    // except we make sure the node_modules/.bin
+    // directory is in the PATH and accssible to the module.
+    // To do otherwise would encourage strange behaviour
+    config.load({
+      "PATH"   : "%{root}/node_modules/.bin : %{path}",
+      "LOGDIR" : process.cwd()
+    });
   }
 
   // this is a global module
@@ -106,10 +113,11 @@ Controller.prototype.start = function(pkg){
   if (!is_rel) {
     mkdirp(envs.VARDIR);
     mkdirp(envs.TEMPDIR);
+    mkdirp(envs.LOGDIR);
   }
 
   // --
-  // -- child process
+  // -- spawn job via http
   // --
 
   console.log('Calling NPM Start on Package', pkg);
@@ -117,14 +125,14 @@ Controller.prototype.start = function(pkg){
   // the job is started by sending an HTTP request
   // the the init daemon
   //
-  // POST /job/$PACKAGE_NAME
+  // PUT /job/$PACKAGE_NAME
   // {
   //   stanza
   // }
   //
   process.env.NPM_CONFIG_PREFIX = process.env.HOME;
   
-  // the 'exec' field of the stanza is copied directly
+  // the 'exec' and 'args' field of the stanza is copied directly
   // from the start script in package.json
   var pkg_json_path = pp.join(pkg_path, "package.json");
   if (!fs.existsSync(pkg_json_path))
@@ -133,26 +141,43 @@ Controller.prototype.start = function(pkg){
   var args     = pkg_json.scripts.start.split(/\s+/);
   var exec     = args.shift();
   
+  // launch http request
+  //
+  // the 'key' is calculated as either the package name
+  // when the package is global, or the package directory
+  // plus a random token for relative packages
+  // 
+  // npkg start mypkg
+  // --> name = mypkg
+  //
+  // npkg start ./mypkg
+  // --> name = mypkg-39f0ea18
+  //
+  var key;
+  if (is_rel) {
+    key = pp.basename(pkg)
+          + '-'
+          + crypto.randomBytes(3).toString('hex');
+  } else {
+    key = pkg;
+  }
+
   // job stanza to be serialized as the request body
   var job = {
     exec     : exec,
     args     : args,
     cwd      : pkg_path,
-    env      : envs
-  }
+    env      : envs,
+    stdio    : {
+      // we log to the logs directory
+      // currently now ay to provide a stdin
+      stdout: pp.join(envs.LOGDIR, key + '.log'),
+      stderr: pp.join(envs.LOGDIR, key + '.log')
+    }
+  };
 
   function handle_response(res) {
     res.pipe(process.stdout);
-  }
-
-  // launch http request
-  var key;
-  if (is_rel) {
-    key = pp.basename(pkg)
-          + '-'
-          + crypto.randomBytes(10).toString('hex');
-  } else {
-    key = pkg;
   }
   
   // job options
@@ -171,16 +196,16 @@ Controller.prototype.start = function(pkg){
 
   // notice that we don't deal with the response
   // yah, we should probably fix that
-}
+};
 
 Controller.prototype.stop = function(pkg){
-  var req = http.request({
+  http.request({
     hostname: '127.0.0.1',
     port: PORT,
     path: '/job/' + pkg + '/sig/SIGQUIT',
     method: 'put'
   }).end();
-}
+};
 
 // parse an npmrc file into an object
 function config(path){
@@ -208,10 +233,10 @@ Controller.prototype.install = function(arg){
     if(err) return console.log("Error",err);
     npm.config.set('global',true);
     var conf = config(process.env.HOME + '/.npmrc');
-    for(key in conf) {
+    for(var key in conf) {
       npm.config.set(key, conf[key]);
     }
-    npm.commands.install( arg, function(err,ok){
+    npm.commands.install(arg, function(err){
       if(err) {
         console.log(err);
         process.exit(-1);
@@ -219,18 +244,18 @@ Controller.prototype.install = function(arg){
 
       // if all goes well, we create an empty config file
       // in $HOME/etc/$PACKAGE/config.json
-      var pkg_config_dir  = path.join(process.env.HOME, 'etc', arg);
-      var pkg_config_file = path.join(pkg_config_dir, 'config.json');
+      var pkg_config_dir  = pp.join(process.env.HOME, 'etc', arg);
+      var pkg_config_file = pp.join(pkg_config_dir, 'config.json');
       mkdirp(pkg_config_dir);
       if (!fs.existsSync(pkg_config_file))
         fs.writeFileSync(pkg_config_file, '{}');
     });
   });
-}
+};
 
 Controller.prototype.remove = function(){
   console.log('(Not Yet Implemented)');
-}
+};
 
 var controller = new Controller();
 
