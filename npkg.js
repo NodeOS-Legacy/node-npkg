@@ -35,6 +35,10 @@ function Controller(){
   
 }
 
+function is_relative(pth) {
+  return (pth[0] == '.' || pth[0] == '/');
+}
+
 Controller.prototype.start = function(pkg){
 
   // --
@@ -43,11 +47,33 @@ Controller.prototype.start = function(pkg){
 
   var config = new Config();
 
-  // load the default config
-  // load the package specific config
-  config.load(process.env);
-  config.load(graceful(CONFIG_ROOT + '/npkg/config.json'));
-  config.load(graceful(CONFIG_ROOT + '/' + pkg + '/config.json'));
+  // first thing to do is determine if this is a relative
+  // module, or an global module
+  //
+  // relative modules are *always* started with current
+  // environment variables
+  //
+  // global modules are started with environment values
+  // defined in $HOME/etc/$PKG/config.json
+  //
+  var pkg_path;
+  var is_rel;
+
+  // this is a relative module
+  if (is_rel = is_relative(pkg)) {
+    pkg_path = pp.join(process.cwd(), pkg);
+    config.load(process.env);
+  }
+
+  // this is a global module
+  else {
+    pkg_path = pp.join(node_modules, pkg);
+
+    // load the default config
+    // load the package specific config  
+    config.load(graceful(CONFIG_ROOT + '/npkg/config.json'));
+    config.load(graceful(CONFIG_ROOT + '/' + pkg + '/config.json'));
+  }
 
   // interpolated values for the environment variables
   // each value is expanded wherever %{VAR} is found
@@ -56,7 +82,9 @@ Controller.prototype.start = function(pkg){
   var map = {
     home    : process.env.HOME,
     user    : process.env.USER,
-    package : pkg
+    root    : pkg_path,
+    package : pkg,
+    path    : process.env.PATH
   };
   var interp = new Interp(map);
 
@@ -74,12 +102,16 @@ Controller.prototype.start = function(pkg){
   // a temp and var directory are available
   // this seems like as good a time as any to 
   // ensure these directories are here
-  mkdirp(envs.VARDIR);
-  mkdirp(envs.TEMPDIR);
+  if (!is_rel) {
+    mkdirp(envs.VARDIR);
+    mkdirp(envs.TEMPDIR);
+  }
 
   // --
   // -- child process
   // --
+
+  console.log('Calling NPM Start on Package', pkg);
 
   // the job is started by sending an HTTP request
   // the the init daemon
@@ -89,8 +121,6 @@ Controller.prototype.start = function(pkg){
   //   stanza
   // }
   //
-  var pkg_path = pp.join(node_modules,pkg);
-  console.log('Calling NPM Start on Package',pkg);
   process.env.NPM_CONFIG_PREFIX = process.env.HOME;
   
   // the 'exec' field of the stanza is copied directly
@@ -109,7 +139,7 @@ Controller.prototype.start = function(pkg){
     cwd      : pkg_path,
     env      : envs
   }
-  
+
   // launch http request
   var req = http.request({
     hostname : '127.0.0.1',
