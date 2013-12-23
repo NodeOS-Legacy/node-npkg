@@ -6,10 +6,12 @@ var pp           = require('path');
 var http         = require('http');
 var crypto       = require('crypto');
 
+var optimist     = require('optimist');
 var mkdirp       = require('lib-mkdirp');
 var Config       = require('lib-config');
 var Interp       = require('lib-interpolate');
 
+var argv         = optimist.argv;
 var PORT         = process.env.PORT || 1;
 var HOST         = process.env.HOST || '127.0.0.1';
 var command      = process.argv[2];
@@ -132,8 +134,6 @@ Controller.prototype.start = function(pkg){
   // --
   // -- spawn job via http
   // --
-
-  console.log('Calling NPM Start on Package', pkg);
 
   // the job is started by sending an HTTP request
   // the the init daemon
@@ -275,6 +275,58 @@ Controller.prototype.remove = function(){
 };
 
 var controller = new Controller();
+
+Controller.prototype.config = function () {
+  var subcmd = argv._[1];
+  var key    = argv._[2];
+  var val    = argv._[3];
+  var name   = argv.name;
+
+  var cfg_path;
+  var cfg_dir = CONFIG_ROOT + '/' + (name || 'npkg');
+
+  cfg_path = cfg_dir + '/config.json';
+
+  var config = graceful(cfg_path);
+
+  function cfg_usage() {
+    console.log('Please Specify "config get|set|cat"');
+    process.exit(1);
+  }
+
+  function cfg_fmt(obj) {
+    Object.keys(obj).forEach(function (key) {
+      console.log('%s=%s', key, obj[key]);
+    });
+  }
+
+  switch (subcmd) {
+    case 'get':
+      if (!key) return cfg_usage();
+      if (config[key]) console.log(config[key]);
+      else cfg_usage();
+      break;
+    case 'set':
+      mkdirp(cfg_dir);
+
+      // let the user also use KEY=VAL style
+      // e.g. npkg config set NAME=jacob
+      if (!val) {
+        var _split = key.split('=');
+        key = _split[0];
+        val = _split[1];
+      }
+      
+      config[key] = val;
+      fs.writeFileSync(cfg_path, JSON.stringify(config), 'utf-8');
+      break;
+    case 'cat':
+      cfg_fmt(config);
+      break;
+    default:
+      cfg_usage();
+  }
+}
 
 if(controller[command]){
   var target = process.argv[3];
