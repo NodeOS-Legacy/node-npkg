@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+var os           = require('os');
 var fs           = require('fs');
 var pp           = require('path');
 var http         = require('http');
@@ -67,6 +68,8 @@ Controller.prototype.start = function(pkg){
     // except we make sure the node_modules/.bin
     // directory is in the PATH and accssible to the module.
     // To do otherwise would encourage strange behaviour
+    //
+    // we write logs to the current directory
     config.load({
       "PATH"   : "%{root}/node_modules/.bin : %{path}",
       "LOGDIR" : process.cwd()
@@ -77,8 +80,8 @@ Controller.prototype.start = function(pkg){
   else {
     pkg_path = pp.join(node_modules, pkg);
 
-    // load the default config
-    // load the package specific config  
+    // load the default config first
+    // the package specific config can override default values
     config.load(graceful(CONFIG_ROOT + '/npkg/config.json'));
     config.load(graceful(CONFIG_ROOT + '/' + pkg + '/config.json'));
   }
@@ -88,16 +91,17 @@ Controller.prototype.start = function(pkg){
   // e.g. %{home} --> /home/jacob
   //      %{user} --> jacob
   var map = {
-    home    : process.env.HOME,
-    user    : process.env.USER,
-    root    : pkg_path,
-    package : pkg,
-    path    : process.env.PATH
+    home     : process.env.HOME,
+    user     : process.env.USER,
+    root     : pkg_path,
+    package  : pkg,
+    path     : process.env.PATH,
+    hostname : os.hostname(),
+    tmpdir   : os.tmpdir()
   };
   var interp = new Interp(map);
 
-  // envs will hold the environment variables 
-  // of our child process
+  // envs will hold the environment variables of our job
   var envs = {};
   config.keys().forEach(function (key) {
     // get the config value and interpolate it
