@@ -5,6 +5,7 @@ var pp           = require('path');
 var spawn        = require('child_process').spawn;
 var http         = require('http');
 
+var mkdirp       = require('lib-mkdirp');
 var Config       = require('lib-config');
 var Interp       = require('lib-interpolate');
 
@@ -15,7 +16,7 @@ var root         = process.env.HOME;
 var node_modules = pp.join(root,'lib/node_modules');
 var node_bins    = pp.join(root,'bin');
 
-var CONFIG_ROOT  = process.env.HOME + '/etc/npkg';
+var CONFIG_ROOT  = process.env.HOME + '/etc';
 
 function graceful(file) {
   var config;
@@ -44,8 +45,9 @@ Controller.prototype.start = function(pkg){
 
   // load the default config
   // load the package specific config
-  config.load(graceful(CONFIG_ROOT + '/config.json'));
-  config.load(graceful(CONFIG_ROOT + '/config/' + pkg + '.json'));
+  config.load(process.env);
+  config.load(graceful(CONFIG_ROOT + '/npkg/config.json'));
+  config.load(graceful(CONFIG_ROOT + '/' + pkg + '/config.json'));
 
   // interpolated values for the environment variables
   // each value is expanded wherever %{VAR} is found
@@ -67,23 +69,40 @@ Controller.prototype.start = function(pkg){
     envs[key] = interp.expand(config.get(key));
   });
 
+  // make sure some directories exist
+  // part of the package/init contract is that 
+  // a temp and var directory are available
+  // this seems like as good a time as any to 
+  // ensure these directories are here
+  mkdirp(envs.VARDIR);
+  mkdirp(envs.TEMPDIR);
+
   // --
   // -- child process
   // --
 
+  // the job is started by sending an HTTP request
+  // the the init daemon
+  //
+  // POST /job/$PACKAGE_NAME
+  // {
+  //   stanza
+  // }
+  //
   var pkg_path = pp.join(node_modules,pkg);
   console.log('Calling NPM Start on Package',pkg);
   process.env.NPM_CONFIG_PREFIX = process.env.HOME;
   
+  // the 'exec' field of the stanza is copied directly
+  // from the start script in package.json
   var pkg_json_path = pp.join(pkg_path,"package.json");
-  
   if (!fs.existsSync(pkg_json_path))
     return console.log('Package %s Has No Start Script or package.json File',pkg);
-  
   var pkg_json = JSON.parse( fs.readFileSync(pkg_json_path) );
   var args     = pkg_json.scripts.start.split(/\s+/);
   var exec     = args.shift();
   
+  // job stanza to be serialized as the request body
   var job = {
     exec     : exec,
     args     : args,
@@ -91,15 +110,18 @@ Controller.prototype.start = function(pkg){
     env      : envs
   }
   
+  // launch http request
   var req = http.request({
     hostname : '127.0.0.1',
     port     : PORT,
     path     : '/job/' + pkg,
     method   : 'put'
   });
-
   req.write(JSON.stringify(job));
   req.end();
+
+  // notice that we don't deal with the response
+  // yah, we should probably fix that
 }
 
 Controller.prototype.stop = function(pkg){
@@ -111,6 +133,7 @@ Controller.prototype.stop = function(pkg){
   }).end();
 }
 
+// parse an npmrc file into an object
 function config(path){
   var configs = {};
   try {
@@ -144,6 +167,14 @@ Controller.prototype.install = function(arg){
         console.log(err);
         process.exit(-1);
       }
+
+      // if all goes well, we create an empty config file
+      // in $HOME/etc/$PACKAGE/config.json
+      var pkg_config_dir  = path.join(process.env.HOME, 'etc', arg);
+      var pkg_config_file = path.join(pkg_config_dir, 'config.json');
+      mkdirp(pkg_config_dir);
+      if (!fs.existsSync(pkg_config_file))
+        fs.writeFileSync(pkg_config_file, '{}');
     });
   });
 }
