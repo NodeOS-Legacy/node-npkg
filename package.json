@@ -9,7 +9,8 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "npm": "~1.3.11"
+    "npm": "~1.3.11",
+    "optimist": "~0.6.0"
   },
   "peerDependencies": {
     "bin-init": "~0.1.0"
