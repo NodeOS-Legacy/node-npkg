@@ -1,0 +1,9 @@
+{
+  "HOME"    : "%{home}",
+  "USER"    : "%{user}",
+  "VARDIR"  : "%{home}/var/%{package}",
+  "TEMPDIR" : "%{tmpdir}/%{user}/%{package}",
+  "LOGDIR"  : "%{home}/log/%{package}",
+  "ROOT"    : "%{home}/lib/node_modules/%{package}",
+  "PATH"    : "%{root}/node_modules/.bin:%{path}"
+}

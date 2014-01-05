@@ -282,11 +282,13 @@ Controller.prototype.config = function () {
   var val    = argv._[3];
   var name   = argv.name;
 
+  // the config file can either come from the default,
+  // $HOME/etc/npkg/config.json or a package-specific location
+  // $HOME/etc/$PKG/config.json
+  // either way, we keep our stories straight here
   var cfg_path;
   var cfg_dir = CONFIG_ROOT + '/' + (name || 'npkg');
-
   cfg_path = cfg_dir + '/config.json';
-
   var config = graceful(cfg_path);
 
   function cfg_usage() {
@@ -300,6 +302,8 @@ Controller.prototype.config = function () {
     });
   }
 
+  // the config option has subcommands
+  // basically a CRUD for config settings
   switch (subcmd) {
     case 'get':
       if (!key) return cfg_usage();
@@ -316,7 +320,7 @@ Controller.prototype.config = function () {
         key = _split[0];
         val = _split[1];
       }
-      
+
       config[key] = val;
       fs.writeFileSync(cfg_path, JSON.stringify(config), 'utf-8');
       break;
