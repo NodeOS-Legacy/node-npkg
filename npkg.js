@@ -276,11 +276,12 @@ Controller.prototype.remove = function(){
 
 var controller = new Controller();
 
+Controller.prototype.cfg    =
 Controller.prototype.config = function () {
   var subcmd = argv._[1];
   var key    = argv._[2];
   var val    = argv._[3];
-  var name   = argv.name;
+  var name   = argv.name || argv.n;
 
   // the config file can either come from the default,
   // $HOME/etc/npkg/config.json or a package-specific location
@@ -292,7 +293,10 @@ Controller.prototype.config = function () {
   var config = graceful(cfg_path);
 
   function cfg_usage() {
-    console.log('Please Specify "config get|set|cat"');
+    console.log("Usage: npkg config get|set ITEM");
+    console.log("       npkg config list");
+    console.log("       npkg config cat");
+    console.log("       npkg config generate PACKAGE");
     process.exit(1);
   }
 
@@ -311,6 +315,7 @@ Controller.prototype.config = function () {
       else cfg_usage();
       break;
     case 'set':
+      if (!key) return cfg_usage();
       mkdirp(cfg_dir);
 
       // let the user also use KEY=VAL style
@@ -327,6 +332,34 @@ Controller.prototype.config = function () {
     case 'cat':
       cfg_fmt(config);
       break;
+    case 'list':
+    case 'ls':
+      Object.keys(config).forEach(function (key) {
+        console.log(key);
+      });
+      break;
+    case 'gen':
+    case 'generate':
+      // generate a configuration, interpolating any missing parameters
+      // right now this isn't going to generate the same thing as npkg start
+      // but we are working on that
+
+      if (!key) return console.log('Usage: npkg config generate PACKAGE');
+      var pkg_path = process.env.HOME + '/lib/node_modules/' + key;
+      var map = {
+        home     : process.env.HOME,
+        user     : process.env.USER,
+        root     : pkg_path,
+        package  : key,
+        path     : process.env.PATH,
+        hostname : os.hostname(),
+        tmpdir   : os.tmpdir()
+      };
+      var interp = new Interp(map);
+      Object.keys(config).forEach(function (key) {
+        console.log("%s=%s", key, interp.expand(config[key]));
+      });
+      break;
     default:
       cfg_usage();
   }
@@ -334,7 +367,7 @@ Controller.prototype.config = function () {
 
 if(controller[command]){
   var target = process.argv[3];
-  if (target) controller[command](target);
+  if (command) controller[command](target);
   else console.log('Please Specify Target');
 }else{
   fs.createReadStream(__dirname + "/usage.txt").pipe(process.stdout);
