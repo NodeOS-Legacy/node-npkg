@@ -293,10 +293,15 @@ Controller.prototype.config = function () {
   var config = graceful(cfg_path);
 
   function cfg_usage() {
-    console.log("Usage: npkg config get|set ITEM");
-    console.log("       npkg config list");
-    console.log("       npkg config cat");
-    console.log("       npkg config generate PACKAGE");
+    console.log("Usage: npkg config [OPTS] get|set ITEM");
+    console.log("       npkg config [OPTS] list");
+    console.log("       npkg config [OPTS] cat");
+    console.log("       npkg config [OPTS] generate PACKAGE");
+    console.log("");
+    console.log("       OPTIONS");
+    console.log("");
+    console.log("       --name=NAME/-n NAME   name of package (or default)");
+    console.log("");
     process.exit(1);
   }
 
@@ -311,8 +316,8 @@ Controller.prototype.config = function () {
   switch (subcmd) {
     case 'get':
       if (!key) return cfg_usage();
-      if (config[key]) console.log(config[key]);
-      else cfg_usage();
+      if (config[key]===undefined) console.log('');
+      else console.log(config[key]);
       break;
     case 'set':
       if (!key) return cfg_usage();
@@ -343,22 +348,71 @@ Controller.prototype.config = function () {
       // generate a configuration, interpolating any missing parameters
       // right now this isn't going to generate the same thing as npkg start
       // but we are working on that
+      var pkg = key;
+      var config = new Config();
 
-      if (!key) return console.log('Usage: npkg config generate PACKAGE');
-      var pkg_path = process.env.HOME + '/lib/node_modules/' + key;
+      // first thing to do is determine if this is a relative
+      // module, or an global module
+      //
+      // relative modules are *always* started with current
+      // environment variables
+      //
+      // global modules are started with environment values
+      // defined in $HOME/etc/$PKG/config.json
+      //
+      var pkg_path;
+      var is_rel;
+
+      // this is a relative module
+      if (is_rel = is_relative(pkg)) {
+        pkg_path = pp.resolve(process.cwd(), pkg);
+        config.load(process.env);
+
+        // We leave the environment un-touched,
+        // except we make sure the node_modules/.bin
+        // directory is in the PATH and accssible to the module.
+        // To do otherwise would encourage strange behaviour
+        //
+        // we write logs to the current directory
+        config.load({
+          "PATH"   : "%{root}/node_modules/.bin : %{path}",
+          "LOGDIR" : process.cwd()
+        });
+      }
+
+      // this is a global module
+      else {
+        pkg_path = pp.join(node_modules, pkg);
+
+        // load the default config first
+        // the package specific config can override default values
+        config.load(graceful(CONFIG_ROOT + '/npkg/config.json'));
+        config.load(graceful(CONFIG_ROOT + '/' + pkg + '/config.json'));
+      }
+
+      // interpolated values for the environment variables
+      // each value is expanded wherever %{VAR} is found
+      // e.g. %{home} --> /home/jacob
+      //      %{user} --> jacob
       var map = {
         home     : process.env.HOME,
         user     : process.env.USER,
         root     : pkg_path,
-        package  : key,
+        package  : pkg,
         path     : process.env.PATH,
         hostname : os.hostname(),
         tmpdir   : os.tmpdir()
       };
       var interp = new Interp(map);
-      Object.keys(config).forEach(function (key) {
-        console.log("%s=%s", key, interp.expand(config[key]));
+      config.keys().forEach(function (key) {
+        var str = config.get(key);
+        console.log("%s=%s", key, interp.expand(str));
       });
+      break;
+    case 'rm':
+    case 'remove':
+      delete config[key];
+      fs.writeFileSync(cfg_path, JSON.stringify(config), 'utf-8');
       break;
     default:
       cfg_usage();
