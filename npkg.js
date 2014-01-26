@@ -21,6 +21,24 @@ var node_modules = pp.join(root,'lib/node_modules');
 
 var CONFIG_ROOT  = process.env.HOME + '/etc';
 
+var http_request;
+if (process.env.DEBUG) {
+  var stream = require('stream');
+  http_request = function (opts, callback) {
+    console.log('----> HTTP Request <----')
+    console.log(opts);
+    var buf = ""
+    return {
+      write: function (d){ buf += d },
+      end: function () {
+        console.log(JSON.parse(buf));
+      }
+    }
+  };
+} else {
+  http_request = http.request;
+}
+
 // try to load a file, and parse it into an object
 // if that fails, just return an empty object
 // this shouldn't throw an error
@@ -51,6 +69,8 @@ function is_relative(pth) {
 }
 
 Controller.prototype.start = function(pkg){
+  
+  if (!pkg) return;
 
   // --
   // -- load environment
@@ -149,28 +169,31 @@ Controller.prototype.start = function(pkg){
   // from the start script in package.json
   var pkg_json_path = pp.join(pkg_path, "package.json");
   if (!fs.existsSync(pkg_json_path))
-    return console.log('Package %s Has No Start Script or package.json File',pkg);
+    return console.log('Package %s Has No package.json File',pkg);
   var pkg_json = JSON.parse( fs.readFileSync(pkg_json_path) );
+  
+  if (!pkg_json.scripts || !pkg_json.scripts.start)
+    return console.log('Package %s Has No Start Script',pkg);
+
   var args     = pkg_json.scripts.start.split(/\s+/);
   var exec     = args.shift();
   
   // launch http request
   //
   // the 'key' is calculated as either the package name
-  // when the package is global, or the package directory
-  // plus a random token for relative packages
+  // when the package is global, or the absolute package
+  // path for relative packages, converting forward slashes
+  // to semi-colons
   // 
   // npkg start mypkg
   // --> name = mypkg
   //
   // npkg start ./mypkg
-  // --> name = mypkg-39f0ea18
+  // --> name = Users-jacob-mypkg
   //
   var key;
   if (is_rel) {
-    key = pp.basename(pkg)
-          + '-'
-          + crypto.randomBytes(3).toString('hex');
+    key = pp.resolve(process.cwd(), pkg).replace(/\//g, ';').substr(1);
   } else {
     key = pkg;
   }
@@ -202,7 +225,7 @@ Controller.prototype.start = function(pkg){
     res.pipe(process.stdout);
   }
 
-  var req = http.request({
+  var req = http_request({
     hostname : HOST,
     port     : PORT,
     path     : '/job/' + key + '?' + options.join('&'),
@@ -216,7 +239,7 @@ Controller.prototype.start = function(pkg){
 };
 
 Controller.prototype.stop = function(pkg){
-  http.request({
+  http_request({
     hostname: '127.0.0.1',
     port: PORT,
     path: '/job/' + pkg + '/sig/SIGQUIT',
@@ -293,7 +316,8 @@ Controller.prototype.config = function () {
   var config = graceful(cfg_path);
 
   function cfg_usage() {
-    console.log("Usage: npkg config [OPTS] get|set ITEM");
+    console.log("Usage: npkg config [OPTS] get KEY");
+    console.log("Usage: npkg config [OPTS] set (KEY VALUE | KEY=VALUE)");
     console.log("       npkg config [OPTS] list");
     console.log("       npkg config [OPTS] cat");
     console.log("       npkg config [OPTS] generate PACKAGE");
@@ -345,6 +369,8 @@ Controller.prototype.config = function () {
       break;
     case 'gen':
     case 'generate':
+      if (!pkg) return cfg_usage();
+
       // generate a configuration, interpolating any missing parameters
       // right now this isn't going to generate the same thing as npkg start
       // but we are working on that
