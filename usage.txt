@@ -3,6 +3,9 @@ Usage: npkg COMMAND TARGET
   Commands
 
     install        install package TARGET from npm
+    run            run a package in the foreground
+    show           list installed packages
+    
     start          start package TARGET via init
     stop           stop running package TARGET via init
 

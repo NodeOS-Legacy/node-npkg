@@ -5,6 +5,9 @@
   "bin": {
     "npkg": "npkg.js"
   },
+  "scripts": {
+    "postinstall": "node scripts/postinstall.js"
+  },
   "repository": "",
   "author": "",
   "license": "MIT",
@@ -13,7 +16,8 @@
     "optimist": "~0.6.0",
     "lib-interpolate": "0.0.0",
     "lib-config": "~0.1.0",
-    "lib-mkdirp": "0.0.0"
+    "lib-mkdirp": "0.0.0",
+    "lib-supervise": "0.0.2"
   },
   "peerDependencies": {
     "bin-init": "~0.1.0"
