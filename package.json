@@ -17,7 +17,9 @@
     "lib-interpolate": "0.0.0",
     "lib-config": "~0.1.0",
     "lib-mkdirp": "0.0.0",
-    "lib-supervise": "0.0.2"
+    "lib-supervise": "0.0.2",
+    "lib-modinfo": "0.0.0",
+    "printf": "~0.1.2"
   },
   "peerDependencies": {
     "bin-init": "~0.1.0"

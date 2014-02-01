@@ -7,10 +7,12 @@ var http         = require('http');
 var crypto       = require('crypto');
 var spawn        = require('child_process').spawn;
 
+var printf       = require('printf');
 var optimist     = require('optimist');
 var mkdirp       = require('lib-mkdirp');
 var Config       = require('lib-config');
 var Interp       = require('lib-interpolate');
+var modinfo      = require('lib-modinfo');
 
 var argv         = optimist.argv;
 var PORT         = process.env.PORT || 1;
@@ -69,9 +71,31 @@ function is_relative(pth) {
   return (pth[0] === '.' || pth[0] === '/');
 }
 
+var YES = '\033[36mYes\033[0m';
+var NO  = '\033[92mNo\033[0m ';
+
 Controller.prototype.show = function () {
+  if (argv.start && argv.bin) return console.log('Cannot specify --start and --bin together');
+
+  if (!argv.start && !argv.bin) 
+    console.log("\033[1mPackage              Exec        Start       Test\033[0m");
   fs.readdirSync(node_modules).forEach(function (pkg) {
-    console.log(pkg);
+    var info = modinfo(pkg);
+    var temp = "%-20s %-20s %-20s %-10s";
+    var bin  = info.bin   ? YES : NO;
+    var strt = info.start ? YES : NO;
+    var test = info.test  ? YES : NO;
+    var line = printf(temp, pkg, bin, strt, test);
+
+    if (argv.start) {
+      if (info.start) console.log(pkg);
+      return;
+    } else if (argv.bin) {
+      if (info.bin) console.log(pkg);
+      return;
+    } else {
+      return console.log(line);
+    }
   });
 };
 
