@@ -33,6 +33,7 @@ if (process.env.DEBUG) {
     var buf = ""
     return {
       write: function (d){ buf += d },
+      on: function (){},
       end: function () {
         console.log(JSON.parse(buf));
       }
@@ -59,6 +60,18 @@ function graceful(file) {
   return config;
 }
 
+function mappings (pkg, root) {
+  return {
+    home     : process.env.HOME,
+    user     : process.env.USER,
+    root     : root,
+    package  : pkg,
+    path     : process.env.PATH,
+    hostname : os.hostname(),
+    tmpdir   : os.tmpdir()
+  };
+};
+
 function Controller(){
   
 }
@@ -78,7 +91,7 @@ Controller.prototype.show = function () {
   if (argv.start && argv.bin) return console.log('Cannot specify --start and --bin together');
 
   if (!argv.start && !argv.bin) 
-    console.log("\033[1mPackage              Exec        Start       Test\033[0m");
+    console.log("\033[1mPackage              Has bin     Can start   Has test\033[0m");
   fs.readdirSync(node_modules).forEach(function (pkg) {
     var info = modinfo(pkg);
     var temp = "%-20s %-20s %-20s %-10s";
@@ -152,15 +165,7 @@ Controller.prototype.run = function (pkg) {
   // each value is expanded wherever %{VAR} is found
   // e.g. %{home} --> /home/jacob
   //      %{user} --> jacob
-  var map = {
-    home     : process.env.HOME,
-    user     : process.env.USER,
-    root     : pkg_path,
-    package  : pkg,
-    path     : process.env.PATH,
-    hostname : os.hostname(),
-    tmpdir   : os.tmpdir()
-  };
+  var map    = mappings(pkg, pkg_path);
   var interp = new Interp(map);
 
   // envs will hold the environment variables of our job
@@ -181,32 +186,13 @@ Controller.prototype.run = function (pkg) {
     mkdirp(envs.TEMPDIR);
     mkdirp(envs.LOGDIR);
   }
-
-  // --
-  // -- spawn job via http
-  // --
-
-  // the job is started by sending an HTTP request
-  // the the init daemon
-  //
-  // PUT /job/$PACKAGE_NAME
-  // {
-  //   stanza
-  // }
-  //
-  process.env.NPM_CONFIG_PREFIX = process.env.HOME;
   
-  // the 'exec' and 'args' field of the stanza is copied directly
-  // from the start script in package.json
-  var pkg_json_path = pp.join(pkg_path, "package.json");
-  if (!fs.existsSync(pkg_json_path))
-    return console.log('Package %s Has No package.json File',pkg);
-  var pkg_json = JSON.parse( fs.readFileSync(pkg_json_path) );
+  var info = modinfo(pkg);
   
-  if (!pkg_json.scripts || !pkg_json.scripts.start)
-    return console.log('Package %s Has No Start Script',pkg);
+  if (!info || !info.start)
+    return console.log('Package %s Has No Start Script', pkg);
 
-  var args     = pkg_json.scripts.start.split(/\s+/);
+  var args     = info.start.split(/\s+/);
   var exec     = args.shift();
   
   // job stanza to be serialized as the request body
@@ -277,15 +263,7 @@ Controller.prototype.start = function(pkg){
   // each value is expanded wherever %{VAR} is found
   // e.g. %{home} --> /home/jacob
   //      %{user} --> jacob
-  var map = {
-    home     : process.env.HOME,
-    user     : process.env.USER,
-    root     : pkg_path,
-    package  : pkg,
-    path     : process.env.PATH,
-    hostname : os.hostname(),
-    tmpdir   : os.tmpdir()
-  };
+  var map    = mappings(pkg, pkg_path);
   var interp = new Interp(map);
 
   // envs will hold the environment variables of our job
@@ -369,13 +347,15 @@ Controller.prototype.start = function(pkg){
   };
 
   // job options
-  var options = [
+  var options = [];
+
+  if (argv.attach) {
     // debugging services is a pain in the ass, so we
     // stream the contents back to npkg
     // you can ^C at any time to stop receiving output
     // this in no way affects the job
-    'stdio=stream'
-  ];
+    options.push('stdio=stream');
+  }
 
   function handle_response(res) {
     switch(res.statusCode) {
@@ -406,24 +386,62 @@ Controller.prototype.start = function(pkg){
     console.log('Error: %s. Is Init Running on Port %d?', err.message, PORT);
     console.log('To start the package in the foreground, try: npkg run %s', pkg);
   });
-
   req.write(JSON.stringify(job));
   req.end();
-
-  // notice that we don't deal with the response
-  // yah, we should probably fix that
 };
 
 Controller.prototype.stop = function(pkg){
   var req = http_request({
     hostname: '127.0.0.1',
     port: PORT,
-    path: '/job/' + pkg + '/sig/SIGQUIT',
-    method: 'put'
-  })
+    path: '/job/' + pkg,
+    method: 'delete'
+  });
   req.on('error', function (err) {
     console.log('Error: %s. Is Init Running on Port %d?', err.message, PORT);
     console.log('Could not stop package', pkg);
+  });
+  req.end();
+};
+
+Controller.prototype.attach = function(pkg){
+  var req = http_request({
+    hostname: '127.0.0.1',
+    port: PORT,
+    path: '/job/' + pkg + '/fd/1',
+    method: 'get'
+  }, function (res) {
+    res.pipe(process.stdout);
+  });
+  req.end();
+};
+
+Controller.prototype.ls   =
+Controller.prototype.list = function () {
+  var req = http_request({
+    hostname: '127.0.0.1',
+    port: PORT,
+    path: '/jobs',
+    method: 'get'
+  }, function (res) {
+    res.pipe(process.stdout);
+    res.on('end', console.log);
+  });
+  req.end();
+}
+
+Controller.prototype.st     =
+Controller.prototype.stat   =
+Controller.prototype.status = function (pkg) {
+  if (!pkg) return console.log('Which Status?\nTry `npkg list`');
+  var req = http_request({
+    hostname: '127.0.0.1',
+    port: PORT,
+    path: '/job/' + pkg,
+    method: 'get'
+  }, function (res) {
+    res.pipe(process.stdout);
+    res.on('end', console.log);
   });
   req.end();
 };
@@ -467,13 +485,34 @@ Controller.prototype.install = function(arg){
         process.exit(-1);
       }
 
-      // if all goes well, we create an empty config file
-      // in $HOME/etc/$PACKAGE/defaults.json
+      // totally unsafe way to grab package.json
+      // i don't really mind blowing up here, it would be weird
+      // if package.json diesn't exist, or was incorrect
+      var pkg_json = JSON.parse(
+        fs.readFileSync(
+          pp.join(root, 'lib/node_modules', arg, 'package.json'), 'utf-8'
+        )
+      );
+
       var pkg_config_dir  = pp.join(process.env.HOME, 'etc', arg);
       var pkg_config_file = pp.join(pkg_config_dir, 'defaults.json');
+
+      var envs;
+      var config = graceful(pkg_config_file);
+
+      // setup environment properties
+      // add them to the config file on install
+      if (envs = pkg_json.environment) {
+        Object.keys(envs).forEach(function (key) {
+          if (!config[key]) config[key] = null;
+        });
+      }
+
+      // if all goes well, we create an empty config file
+      // in $HOME/etc/$PACKAGE/defaults.json
       mkdirp(pkg_config_dir);
-      if (!fs.existsSync(pkg_config_file))
-        fs.writeFileSync(pkg_config_file, '{}');
+      
+      fs.writeFileSync(pkg_config_file, JSON.stringify(config));
     });
   });
 };
@@ -484,6 +523,7 @@ Controller.prototype.remove = function(){
 
 var controller = new Controller();
 
+Controller.prototype.c      =
 Controller.prototype.cfg    =
 Controller.prototype.config = function () {
   var subcmd = argv._[1];
@@ -502,11 +542,12 @@ Controller.prototype.config = function () {
   var config = graceful(cfg_path);
 
   function cfg_usage() {
-    console.log("Usage: npkg config [OPTS] get KEY");
-    console.log("       npkg config [OPTS] set (KEY VALUE | KEY=VALUE)");
-    console.log("       npkg config [OPTS] list");
-    console.log("       npkg config [OPTS] cat");
-    console.log("       npkg config [OPTS] generate PACKAGE");
+    console.log("Usage: npkg config [OPTS] get KEY          get a config value");
+    console.log("       npkg config [OPTS] set KEY=VAL      set a config value");
+    console.log("       npkg config [OPTS] rm KEY           remove config value");
+    console.log("       npkg config [OPTS] list             list all config keys");
+    console.log("       npkg config [OPTS] cat              list all key=value pairs");
+    console.log("       npkg config [OPTS] gen KEY          interpolate a config");
     console.log("");
     console.log("       OPTIONS");
     console.log("");
@@ -524,11 +565,13 @@ Controller.prototype.config = function () {
   // the config option has subcommands
   // basically a CRUD for config settings
   switch (subcmd) {
+    case 'g':
     case 'get':
       if (!key) return cfg_usage();
       if (config[key]===undefined) console.log('');
       else console.log(config[key]);
       break;
+    case 's':
     case 'set':
       if (!key) return cfg_usage();
       mkdirp(cfg_dir);
@@ -544,11 +587,13 @@ Controller.prototype.config = function () {
       config[key] = val;
       fs.writeFileSync(cfg_path, JSON.stringify(config), 'utf-8');
       break;
+    case 'c':
     case 'cat':
       cfg_fmt(config);
       break;
-    case 'list':
+    case 'l':
     case 'ls':
+    case 'list':
       Object.keys(config).forEach(function (key) {
         console.log(key);
       });
@@ -606,15 +651,7 @@ Controller.prototype.config = function () {
       // each value is expanded wherever %{VAR} is found
       // e.g. %{home} --> /home/jacob
       //      %{user} --> jacob
-      var map = {
-        home     : process.env.HOME,
-        user     : process.env.USER,
-        root     : pkg_path,
-        package  : pkg,
-        path     : process.env.PATH,
-        hostname : os.hostname(),
-        tmpdir   : os.tmpdir()
-      };
+      var map    = mappings(root, pkg_path);
       var interp = new Interp(map);
       config.keys().forEach(function (key) {
         var str = config.get(key);

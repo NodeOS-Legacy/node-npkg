@@ -8,6 +8,8 @@ Usage: npkg COMMAND TARGET
     
     start          start package TARGET via init
     stop           stop running package TARGET via init
+    list           list active jobs
+    status         list an active jobs status
 
     config         manipulate config from command line
 
