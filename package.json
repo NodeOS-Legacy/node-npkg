@@ -19,7 +19,10 @@
     "lib-mkdirp": "0.0.0",
     "lib-supervise": "0.0.2",
     "lib-modinfo": "0.0.0",
-    "printf": "~0.1.2"
+    "printf": "~0.1.2",
+    "lib-npkg-resolve": "0.0.0",
+    "lib-npkg-paths": "0.0.0",
+    "lib-cmdparse": "~0.1.0"
   },
   "peerDependencies": {
     "bin-init": "~0.1.0"

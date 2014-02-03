@@ -13,6 +13,9 @@ var mkdirp       = require('lib-mkdirp');
 var Config       = require('lib-config');
 var Interp       = require('lib-interpolate');
 var modinfo      = require('lib-modinfo');
+var resolve      = require('lib-npkg-resolve');
+var npaths       = require('lib-npkg-paths');
+var cmdparse     = require('lib-cmdparse');
 
 var argv         = optimist.argv;
 var PORT         = process.env.PORT || 1;
@@ -114,13 +117,14 @@ Controller.prototype.show = function () {
 
 Controller.prototype.run = function (pkg) {
 
-  if (!pkg) return console.log('Run what (try: npkg show)?');
+  if (!pkg) throw new Error('Run what (try: npkg show)?');
 
   // --
   // -- load environment
   // --
 
-  var config = new Config();
+  var config   = new Config();
+  var pkg_path = resolve(pkg);
 
   // first thing to do is determine if this is a relative
   // module, or an global module
@@ -131,35 +135,53 @@ Controller.prototype.run = function (pkg) {
   // global modules are started with environment values
   // defined in $HOME/etc/$PKG/defaults.json
   //
-  var pkg_path;
-  var is_rel;
+  if (is_relative(pkg)) {
+    // this is a relative module
 
-  // this is a relative module
-  if (is_rel = is_relative(pkg)) {
-    pkg_path = pp.resolve(process.cwd(), pkg);
-    config.load(process.env);
-
-    // We leave the environment un-touched,
-    // except we make sure the node_modules/.bin
-    // directory is in the PATH and accssible to the module.
-    // To do otherwise would encourage strange behaviour
-    //
     // we write logs to the current directory
     config.load({
-      "PATH"   : "%{root}/node_modules/.bin : %{path}",
-      "LOGDIR" : process.cwd()
+      // set expected service variables to current directory
+      // this is principle of least surprise, you shouldn't 
+      // have to go searching the system for these directories
+      "VARDIR"  : process.cwd(),
+      "LOGDIR"  : process.cwd(),
+      "TEMPDIR" : process.cwd()
     });
-  }
 
-  // this is a global module
-  else {
-    pkg_path = pp.join(node_modules, pkg);
+    // relative modules inherit the calling processes
+    // the environment can override any of the above defaults
+    config.load(process.env);
+
+    // finally ammend the path to include execs defined in
+    // dependent modules
+    config.load({
+      "PATH" : "%{root}/node_modules/.bin : %{path}",
+    });
+  } else {
+    // this is a global module
 
     // load the default config first
     // the package specific config can override default values
-    config.load(graceful(CONFIG_ROOT + '/defaults.json'));
-    config.load(graceful(CONFIG_ROOT + '/' + pkg + '/defaults.json'));
+    var config_defaults = npaths('config_defaults')
+    var module_defaults = npaths('config_defaults_module', {package: pkg})
+
+    config.load(graceful(config_defaults));
+    config.load(graceful(module_defaults));
   }
+
+  // grab package.json file
+  var info  = modinfo(pkg_path);
+  var start = info && info.scripts && info.scripts.start;
+  if (!start)
+    throw new Error('Package %s has no start script', pkg);
+
+  // parse start script
+  var cmds = cmdparse(start);
+  var exec = cmds.exec;
+  var args = cmds.args;
+
+  // add any environment variables defined in the start script
+  config.load(cmds.envs);
 
   // interpolated values for the environment variables
   // each value is expanded wherever %{VAR} is found
@@ -181,34 +203,29 @@ Controller.prototype.run = function (pkg) {
   // a temp and var directory are available
   // this seems like as good a time as any to 
   // ensure these directories are here
-  if (!is_rel) {
-    mkdirp(envs.VARDIR);
-    mkdirp(envs.TEMPDIR);
-    mkdirp(envs.LOGDIR);
-  }
-  
-  var info = modinfo(pkg);
-  
-  if (!info || !info.start)
-    return console.log('Package %s Has No Start Script', pkg);
-
-  var args     = info.start.split(/\s+/);
-  var exec     = args.shift();
-  
+  if (envs.VARDIR ) mkdirp(envs.VARDIR);
+  if (envs.TEMPDIR) mkdirp(envs.TEMPDIR);
+  if (envs.LOGDIR ) mkdirp(envs.LOGDIR);
+    
   // job stanza to be serialized as the request body
-  var stanza = {
-    exec     : exec,
-    args     : args,
-    cwd      : pkg_path,
-    envs     : envs
+  var options = {
+    cwd : pkg_path,
+    env : envs
   };
 
-  // notice that we don't deal with the response
-  // yah, we should probably fix that
-  var proc = spawn(stanza.exec, stanza.args, stanza);
+  // run the job as a child process
+  // attach current stdio to child
+  var proc = spawn(exec, args, options);
+  process.stdin.pipe(proc.stdin);
   proc.stdout.pipe(process.stdout);
   proc.stderr.pipe(process.stderr);
-}
+  proc.on('exit', function (code, signal) {
+    // exit with childs status code
+    // or exit 51 in the event of a signal
+    // because 51gnal looks like Signal
+    process.exit(code === null ? 51 : code)
+  });
+};
 
 Controller.prototype.start = function(pkg){
   
@@ -271,7 +288,10 @@ Controller.prototype.start = function(pkg){
   config.keys().forEach(function (key) {
     // get the config value and interpolate it
     // against the above map
-    envs[key] = interp.expand(config.get(key));
+    var val = config.get(key);
+    if (val === null) 
+      return console.log("key %s not defined", key);
+    envs[key] = interp.expand(val);
   });
 
   // make sure some directories exist
@@ -424,11 +444,21 @@ Controller.prototype.list = function () {
     path: '/jobs',
     method: 'get'
   }, function (res) {
-    res.pipe(process.stdout);
-    res.on('end', console.log);
+    var data = '';
+    res.on('data', function (chunk) {
+      data += chunk;
+    });
+    res.on('end', function () {
+      var obj = JSON.parse(data);
+      Object.keys(obj).forEach(function (name) {
+        var job = obj[name];
+        var msg = printf("%-20s %-10s %-10s %-10s", name, job.status, job.pid, job.respawn);
+        console.log(msg);
+      });
+    });
   });
   req.end();
-}
+};
 
 Controller.prototype.st     =
 Controller.prototype.stat   =
@@ -639,12 +669,13 @@ Controller.prototype.config = function () {
 
       // this is a global module
       else {
+        console.log()
         pkg_path = pp.join(node_modules, pkg);
 
         // load the default config first
         // the package specific config can override default values
-        config.load(graceful(CONFIG_ROOT + '/defaults.json'));
-        config.load(graceful(CONFIG_ROOT + '/' + pkg + '/defaults.json'));
+        config.load(graceful(npaths('config_defaults')));
+        config.load(graceful(npaths('config_defaults_module', {package: pkg})));
       }
 
       // interpolated values for the environment variables
