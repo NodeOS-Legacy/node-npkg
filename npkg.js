@@ -16,12 +16,16 @@ var modinfo      = require('lib-modinfo');
 var resolve      = require('lib-npkg-resolve');
 var npaths       = require('lib-npkg-paths');
 var cmdparse     = require('lib-cmdparse');
+
 var npkghash     = require('./npkg-module-hash.js');
+var API          = require('./api.js');
 
 var argv         = optimist.argv;
 var PORT         = process.env.PORT || 1;
 var HOST         = process.env.HOST || '127.0.0.1';
 var command      = process.argv[2];
+
+var init_api     = new API('http://' + HOST + ':' + PORT);
 
 var root         = process.env.HOME;
 var node_modules = pp.join(root,'lib/node_modules');
@@ -278,7 +282,9 @@ Controller.prototype.start = function(pkg){
     options.push('stdio=stream');
   }
 
-  function handle_response(res) {
+  function handle_response(err, res) {
+    if (err) return console.log('Error', err);
+
     switch(res.statusCode) {
       case 400:
         console.log('Failed to Start Service');
@@ -289,6 +295,7 @@ Controller.prototype.start = function(pkg){
       default:
         console.log('Unknown Response');
     }
+
     // res.pipe(process.stdout);
     res.pipe(process.stdout);
     res.on('end', function () {
@@ -298,88 +305,41 @@ Controller.prototype.start = function(pkg){
     });
   }
 
-  var req = http_request({
-    hostname : HOST,
-    port     : PORT,
-    path     : '/job/' + key + '?' + options.join('&'),
-    method   : 'put',
-    headers  : {
-      'Content-Type': 'application/json'
-    }
-  }, handle_response);
-
-  req.on('error', function (err) {
-    console.log('Error: %s. Is Init Running on Port %d?', err.message, PORT);
-    console.log('To start the package in the foreground, try: npkg run %s', pkg);
-  });
-  req.write(JSON.stringify(job));
-  req.end();
+  init_api.start(key, job, options, handle_response);
 };
 
 Controller.prototype.stop = function(pkg){
-  var req = http_request({
-    hostname: '127.0.0.1',
-    port: PORT,
-    path: '/job/' + pkg,
-    method: 'delete'
+  init_api.stop(pkg, function (err) {
+    if (err) console.log('Error', err);
   });
-  req.on('error', function (err) {
-    console.log('Error: %s. Is Init Running on Port %d?', err.message, PORT);
-    console.log('Could not stop package', pkg);
-  });
-  req.end();
 };
 
 Controller.prototype.attach = function(pkg){
-  var req = http_request({
-    hostname: '127.0.0.1',
-    port: PORT,
-    path: '/job/' + pkg + '/fd/1',
-    method: 'get'
-  }, function (res) {
-    res.pipe(process.stdout);
+  init_api.attach(pkg, function (err, str) {
+    if (err) return console.log('Error', err);
+    str.pipe(process.stdout);
   });
-  req.end();
 };
 
 Controller.prototype.ls   =
 Controller.prototype.list = function () {
-  var req = http_request({
-    hostname: '127.0.0.1',
-    port: PORT,
-    path: '/jobs',
-    method: 'get'
-  }, function (res) {
-    var data = '';
-    res.on('data', function (chunk) {
-      data += chunk;
-    });
-    res.on('end', function () {
-      var obj = JSON.parse(data);
-      Object.keys(obj).forEach(function (name) {
-        var job = obj[name];
-        var msg = printf("%-20s %-10s %-10s %-10s", name, job.status, job.pid, job.respawn);
-        console.log(msg);
-      });
+  init_api.list(function (err, obj) {
+    Object.keys(obj).forEach(function (name) {
+      var job = obj[name];
+      var msg = printf("%-20s %-10s %-10s %-10s", name, job.status, job.pid, job.respawn);
+      console.log(msg);
     });
   });
-  req.end();
 };
 
 Controller.prototype.st     =
 Controller.prototype.stat   =
 Controller.prototype.status = function (pkg) {
   if (!pkg) return console.log('Which Status?\nTry `npkg list`');
-  var req = http_request({
-    hostname: '127.0.0.1',
-    port: PORT,
-    path: '/job/' + pkg,
-    method: 'get'
-  }, function (res) {
-    res.pipe(process.stdout);
-    res.on('end', console.log);
+  init_api.status(pkg, function (err, obj) {
+    if (err) return console.log('Error', err);
+    console.log(JSON.stringify(obj, null, 2));
   });
-  req.end();
 };
 
 // parse an npmrc file into an object
