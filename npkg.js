@@ -16,6 +16,7 @@ var modinfo      = require('lib-modinfo');
 var resolve      = require('lib-npkg-resolve');
 var npaths       = require('lib-npkg-paths');
 var cmdparse     = require('lib-cmdparse');
+var npkghash     = require('./npkg-module-hash.js');
 
 var argv         = optimist.argv;
 var PORT         = process.env.PORT || 1;
@@ -115,10 +116,7 @@ Controller.prototype.show = function () {
   });
 };
 
-Controller.prototype.run = function (pkg) {
-
-  if (!pkg) throw new Error('Run what (try: npkg show)?');
-
+function generateRunParameters(pkg) {
   // --
   // -- load environment
   // --
@@ -208,17 +206,30 @@ Controller.prototype.run = function (pkg) {
   if (envs.LOGDIR ) mkdirp(envs.LOGDIR);
     
   // job stanza to be serialized as the request body
-  var options = {
-    cwd : pkg_path,
-    env : envs
+  var job = {
+    exec : exec,
+    args : args,
+    cwd  : pkg_path,
+    env  : envs
   };
+
+  // everything necessary to start your day
+  return job;
+}
+
+Controller.prototype.run = function (pkg) {
+  if (!pkg) throw new Error('Run what (try: npkg show)?');
+
+  var run = generateRunParameters(pkg);
 
   // run the job as a child process
   // attach current stdio to child
-  var proc = spawn(exec, args, options);
+  var proc = spawn(run.exec, run.args, run);
+  
   process.stdin.pipe(proc.stdin);
   proc.stdout.pipe(process.stdout);
   proc.stderr.pipe(process.stderr);
+  
   proc.on('exit', function (code, signal) {
     // exit with childs status code
     // or exit 51 in the event of a signal
@@ -228,141 +239,24 @@ Controller.prototype.run = function (pkg) {
 };
 
 Controller.prototype.start = function(pkg){
-  
   if (!pkg) return console.log('Start what?');
 
-  // --
-  // -- load environment
-  // --
+  var run = generateRunParameters(pkg);
+  var key = npkghash(pkg);
 
-  var config = new Config();
-
-  // first thing to do is determine if this is a relative
-  // module, or an global module
-  //
-  // relative modules are *always* started with current
-  // environment variables
-  //
-  // global modules are started with environment values
-  // defined in $HOME/etc/$PKG/defaults.json
-  //
-  var pkg_path;
-  var is_rel;
-
-  // this is a relative module
-  if (is_rel = is_relative(pkg)) {
-    pkg_path = pp.resolve(process.cwd(), pkg);
-    config.load(process.env);
-
-    // We leave the environment un-touched,
-    // except we make sure the node_modules/.bin
-    // directory is in the PATH and accssible to the module.
-    // To do otherwise would encourage strange behaviour
-    //
-    // we write logs to the current directory
-    config.load({
-      "PATH"   : "%{root}/node_modules/.bin : %{path}",
-      "LOGDIR" : process.cwd()
-    });
-  }
-
-  // this is a global module
-  else {
-    pkg_path = pp.join(node_modules, pkg);
-
-    // load the default config first
-    // the package specific config can override default values
-    config.load(graceful(CONFIG_ROOT + '/defaults.json'));
-    config.load(graceful(CONFIG_ROOT + '/' + pkg + '/defaults.json'));
-  }
-
-  // interpolated values for the environment variables
-  // each value is expanded wherever %{VAR} is found
-  // e.g. %{home} --> /home/jacob
-  //      %{user} --> jacob
-  var map    = mappings(pkg, pkg_path);
-  var interp = new Interp(map);
-
-  // envs will hold the environment variables of our job
-  var envs = {};
-  config.keys().forEach(function (key) {
-    // get the config value and interpolate it
-    // against the above map
-    var val = config.get(key);
-    if (val === null) 
-      return console.log("key %s not defined", key);
-    envs[key] = interp.expand(val);
-  });
-
-  // make sure some directories exist
-  // part of the package/init contract is that 
-  // a temp and var directory are available
-  // this seems like as good a time as any to 
-  // ensure these directories are here
-  if (!is_rel) {
-    mkdirp(envs.VARDIR);
-    mkdirp(envs.TEMPDIR);
-    mkdirp(envs.LOGDIR);
-  }
-
-  // --
-  // -- spawn job via http
-  // --
-
-  // the job is started by sending an HTTP request
-  // the the init daemon
-  //
-  // PUT /job/$PACKAGE_NAME
-  // {
-  //   stanza
-  // }
-  //
-  process.env.NPM_CONFIG_PREFIX = process.env.HOME;
-  
-  // the 'exec' and 'args' field of the stanza is copied directly
-  // from the start script in package.json
-  var pkg_json_path = pp.join(pkg_path, "package.json");
-  if (!fs.existsSync(pkg_json_path))
-    return console.log('Package %s Has No package.json File',pkg);
-  var pkg_json = JSON.parse( fs.readFileSync(pkg_json_path) );
-  
-  if (!pkg_json.scripts || !pkg_json.scripts.start)
-    return console.log('Package %s Has No Start Script',pkg);
-
-  var args     = pkg_json.scripts.start.split(/\s+/);
-  var exec     = args.shift();
-  
-  // launch http request
-  //
-  // the 'key' is calculated as either the package name
-  // when the package is global, or the absolute package
-  // path for relative packages, converting forward slashes
-  // to semi-colons
-  // 
-  // npkg start mypkg
-  // --> name = mypkg
-  //
-  // npkg start ./mypkg
-  // --> name = Users-jacob-mypkg
-  //
-  var key;
-  if (is_rel) {
-    key = pp.resolve(process.cwd(), pkg).replace(/\//g, ';').substr(1);
-  } else {
-    key = pkg;
-  }
+  var log = pp.join(run.env.LOGDIR, key + '.log');
 
   // job stanza to be serialized as the request body
   var job = {
-    exec     : exec,
-    args     : args,
-    cwd      : pkg_path,
-    env      : envs,
-    stdio    : {
+    exec  : run.exec,
+    args  : run.args,
+    cwd   : run.cwd,
+    env   : run.env,
+    stdio : {
       // we log to the logs directory
       // currently now ay to provide a stdin
-      stdout: pp.join(envs.LOGDIR, key + '.log'),
-      stderr: pp.join(envs.LOGDIR, key + '.log')
+      stdout: log,
+      stderr: log
     }
   };
 
@@ -380,16 +274,21 @@ Controller.prototype.start = function(pkg){
   function handle_response(res) {
     switch(res.statusCode) {
       case 400:
-        console.log('Failure');
+        console.log('Failed to Start Service');
         break;
       case 201:
-        console.log('Success');
+        console.log('Started Service');
         break;
       default:
         console.log('Unknown Response');
     }
+    // res.pipe(process.stdout);
     res.pipe(process.stdout);
-    res.on('end', console.log);
+    res.on('end', function () {
+      console.log();
+      console.log('started : %s', key);
+      console.log('logfile : %s', log);
+    });
   }
 
   var req = http_request({
