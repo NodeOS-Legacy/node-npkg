@@ -96,19 +96,26 @@ Controller.prototype.show = function () {
 
   if (!argv.start && !argv.bin) 
     console.log("\033[1mPackage              Has bin     Can start   Has test\033[0m");
-  fs.readdirSync(node_modules).forEach(function (pkg) {
+
+  var node_modules = npaths('node_modules');
+
+  fs.readdirSync(node_modules).forEach(function (name) {
+
+    var pkg  = pp.join(node_modules, name);
     var info = modinfo(pkg);
+
     var temp = "%-20s %-20s %-20s %-10s";
-    var bin  = info.bin   ? YES : NO;
-    var strt = info.start ? YES : NO;
-    var test = info.test  ? YES : NO;
-    var line = printf(temp, pkg, bin, strt, test);
+    var bin  = info.bin                           ? YES : NO;
+    var strt = info.scripts && info.scripts.start ? YES : NO;
+    var test = info.scripts && info.scripts.test  ? YES : NO;
+
+    var line = printf(temp, name, bin, strt, test);
 
     if (argv.start) {
-      if (info.start) console.log(pkg);
+      if (info.scripts && info.scripts.start) console.log(name);
       return;
     } else if (argv.bin) {
-      if (info.bin) console.log(pkg);
+      if (info.bin) console.log(name);
       return;
     } else {
       return console.log(line);
