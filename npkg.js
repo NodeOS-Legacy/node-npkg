@@ -4,7 +4,6 @@ var os           = require('os');
 var fs           = require('fs');
 var pp           = require('path');
 var http         = require('http');
-var crypto       = require('crypto');
 var spawn        = require('child_process').spawn;
 
 var printf       = require('printf');
@@ -12,17 +11,21 @@ var optimist     = require('optimist');
 var mkdirp       = require('lib-mkdirp');
 var Config       = require('lib-config');
 var Interp       = require('lib-interpolate');
-var modinfo      = require('lib-modinfo');
 var resolve      = require('lib-npkg-resolve');
-var npaths       = require('lib-npkg-paths');
 var cmdparse     = require('lib-cmdparse');
 
 var npkghash     = require('./npkg-module-hash.js');
+var graceful     = require('./lib-graceful-json.js');
+var NPKGConfig   = require('./lib-npkg-config.js');
+var npaths       = require('./lib-npkg-paths.js');
+var modinfo      = require('./lib-modinfo.js');
+var fmtenvs      = require('./lib-format-envs.js');
+
 var API          = require('./api.js');
 
 var argv         = optimist.argv;
-var PORT         = process.env.PORT || 1;
-var HOST         = process.env.HOST || '127.0.0.1';
+var PORT         = process.env.NPKG_PORT || process.env.PORT || 1;
+var HOST         = process.env.NPKG_HOST || process.env.HOST || '127.0.0.1';
 var command      = process.argv[2];
 
 var init_api     = new API('http://' + HOST + ':' + PORT);
@@ -31,42 +34,6 @@ var root         = process.env.HOME;
 var node_modules = pp.join(root,'lib/node_modules');
 
 var CONFIG_ROOT  = process.env.HOME + '/etc';
-
-var http_request;
-if (process.env.DEBUG) {
-  var stream = require('stream');
-  http_request = function (opts, callback) {
-    console.log('----> HTTP Request <----')
-    console.log(opts);
-    var buf = ""
-    return {
-      write: function (d){ buf += d },
-      on: function (){},
-      end: function () {
-        console.log(JSON.parse(buf));
-      }
-    }
-  };
-} else {
-  http_request = http.request;
-}
-
-// try to load a file, and parse it into an object
-// if that fails, just return an empty object
-// this shouldn't throw an error
-// it's a big boy, it deals with it's own problems
-function graceful(file) {
-  var config;
-  try {
-    config = JSON.parse(
-      fs.readFileSync(file, 'utf-8')
-    );
-  } catch (e) {
-    // default empty config
-    config = {};
-  }
-  return config;
-}
 
 function mappings (pkg, root) {
   return {
@@ -96,11 +63,6 @@ var YES = '\033[36mYes\033[0m';
 var NO  = '\033[92mNo\033[0m ';
 
 Controller.prototype.show = function () {
-  if (argv.start && argv.bin) return console.log('Cannot specify --start and --bin together');
-
-  if (!argv.start && !argv.bin) 
-    console.log("\033[1mPackage              Has bin     Can start   Has test\033[0m");
-
   var node_modules = npaths('node_modules');
 
   fs.readdirSync(node_modules).forEach(function (name) {
@@ -115,15 +77,7 @@ Controller.prototype.show = function () {
 
     var line = printf(temp, name, bin, strt, test);
 
-    if (argv.start) {
-      if (info.scripts && info.scripts.start) console.log(name);
-      return;
-    } else if (argv.bin) {
-      if (info.bin) console.log(name);
-      return;
-    } else {
-      return console.log(line);
-    }
+    console.log(line);
   });
 };
 
@@ -133,6 +87,11 @@ function generateRunParameters(pkg) {
   // --
 
   var config   = new Config();
+
+  // determine the full path of the npkg package
+  // this lookup is not the same as regular module lookup
+  // relative paths start from process.cwd()
+  // global names start from $HOME/lib/node_modules
   var pkg_path = resolve(pkg);
 
   // first thing to do is determine if this is a relative
@@ -181,8 +140,10 @@ function generateRunParameters(pkg) {
   // grab package.json file
   var info  = modinfo(pkg_path);
   var start = info && info.scripts && info.scripts.start;
-  if (!start)
-    throw new Error('Package %s has no start script', pkg);
+  if (!start) {
+    var msg = util.format('Package %s has no start script', pkg);
+    throw new Error(msg);
+  }
 
   // parse start script
   var cmds = cmdparse(start);
@@ -255,7 +216,14 @@ Controller.prototype.start = function(pkg){
   var run = generateRunParameters(pkg);
   var key = npkghash(pkg);
 
-  var log = pp.join(run.env.LOGDIR, key + '.log');
+  // we're going to tell init where to write stdout/stderr
+  // right now, we're going to write to within the LOGDIR or
+  // failing that, to the current directory
+  var logdir = run.env.LOGDIR || process.cwd();
+  var log = npaths('service_log_file', {
+    logdir : logdir,
+    key    : key
+  });
 
   // job stanza to be serialized as the request body
   var job = {
@@ -282,10 +250,10 @@ Controller.prototype.start = function(pkg){
     options.push('stdio=stream');
   }
 
-  function handle_response(err, res) {
+  function handle_response(err, status, str) {
     if (err) return console.log('Error', err);
 
-    switch(res.statusCode) {
+    switch(status) {
       case 400:
         console.log('Failed to Start Service');
         break;
@@ -296,9 +264,9 @@ Controller.prototype.start = function(pkg){
         console.log('Unknown Response');
     }
 
-    // res.pipe(process.stdout);
-    res.pipe(process.stdout);
-    res.on('end', function () {
+      // str.pipe(process.stdout);
+    str.pipe(process.stdout);
+    str.on('end', function () {
       console.log();
       console.log('started : %s', key);
       console.log('logfile : %s', log);
@@ -324,6 +292,7 @@ Controller.prototype.attach = function(pkg){
 Controller.prototype.ls   =
 Controller.prototype.list = function () {
   init_api.list(function (err, obj) {
+    if (err) return console.log(err);
     Object.keys(obj).forEach(function (name) {
       var job = obj[name];
       var msg = printf("%-20s %-10s %-10s %-10s", name, job.status, job.pid, job.respawn);
@@ -417,60 +386,52 @@ Controller.prototype.remove = function(){
   console.log('(Not Yet Implemented)');
 };
 
+function cfg_usage() {
+  console.log("Usage: npkg config [OPTS] get KEY          get a config value");
+  console.log("       npkg config [OPTS] set KEY=VAL      set a config value");
+  console.log("       npkg config [OPTS] rm KEY           remove config value");
+  console.log("       npkg config [OPTS] list             list all config keys");
+  console.log("       npkg config [OPTS] cat              list all key=value pairs");
+  console.log("       npkg config        gen KEY          interpolate a config");
+  console.log("");
+  console.log("       OPTIONS");
+  console.log("");
+  console.log("       --name=NAME/-n NAME   name of package (or default)");
+  console.log("");
+  process.exit(1);
+}
+
 var controller = new Controller();
 
 Controller.prototype.c      =
 Controller.prototype.cfg    =
 Controller.prototype.config = function () {
-  var subcmd = argv._[1];
-  var key    = argv._[2];
-  var val    = argv._[3];
-  var name   = argv.name || argv.n;
+  var subcmd  = argv._[1];
+  var key     = argv._[2];
+  var val     = argv._[3];
+  var name    = argv.name || argv.n;
 
-  // the config file can either come from the default,
-  // $HOME/etc/defaults.json or a package-specific location
-  // $HOME/etc/$PKG/defaults.json
-  // either way, we keep our stories straight here
-  var cfg_path;
-  var cfg_dir = CONFIG_ROOT;
-  if (name) cfg_dir += '/' + name;
-  cfg_path = cfg_dir + '/defaults.json';
-  var config = graceful(cfg_path);
-
-  function cfg_usage() {
-    console.log("Usage: npkg config [OPTS] get KEY          get a config value");
-    console.log("       npkg config [OPTS] set KEY=VAL      set a config value");
-    console.log("       npkg config [OPTS] rm KEY           remove config value");
-    console.log("       npkg config [OPTS] list             list all config keys");
-    console.log("       npkg config [OPTS] cat              list all key=value pairs");
-    console.log("       npkg config [OPTS] gen KEY          interpolate a config");
-    console.log("");
-    console.log("       OPTIONS");
-    console.log("");
-    console.log("       --name=NAME/-n NAME   name of package (or default)");
-    console.log("");
-    process.exit(1);
+  var defpath;
+  if (name) {
+    defpath = npaths('config_defaults_module', {package: name});
+  } else {
+    defpath = npaths('config_defaults');
   }
 
-  function cfg_fmt(obj) {
-    Object.keys(obj).forEach(function (key) {
-      console.log('%s=%s', key, obj[key]);
-    });
-  }
+  var npkgcfg = NPKGConfig.Load(defpath);
 
   // the config option has subcommands
   // basically a CRUD for config settings
   switch (subcmd) {
     case 'g':
     case 'get':
-      if (!key) return cfg_usage();
-      if (config[key]===undefined) console.log('');
-      else console.log(config[key]);
+      if (!key) throw new Error('Please Specify Key');
+      console.log(npkgcfg.get(key));
       break;
+
     case 's':
     case 'set':
       if (!key) return cfg_usage();
-      mkdirp(cfg_dir);
 
       // let the user also use KEY=VAL style
       // e.g. npkg config set NAME=jacob
@@ -480,95 +441,57 @@ Controller.prototype.config = function () {
         val = _split[1];
       }
 
-      config[key] = val;
-      fs.writeFileSync(cfg_path, JSON.stringify(config), 'utf-8');
+      npkgcfg.set(key, val);
+      NPKGConfig.Save(defpath, npkgcfg);
       break;
+
     case 'c':
     case 'cat':
-      cfg_fmt(config);
+      npkgcfg.cat().pipe(process.stdout);
       break;
+
     case 'l':
     case 'ls':
     case 'list':
-      Object.keys(config).forEach(function (key) {
-        console.log(key);
-      });
+      npkgcfg.list().pipe(process.stdout);
       break;
+
     case 'gen':
     case 'generate':
       if (!key) return cfg_usage();
 
-      // generate a configuration, interpolating any missing parameters
-      // right now this isn't going to generate the same thing as npkg start
-      // but we are working on that
-      var pkg = key;
-      var config = new Config();
+      var run = generateRunParameters(key);
+      var key = npkghash(key);
 
-      // first thing to do is determine if this is a relative
-      // module, or an global module
-      //
-      // relative modules are *always* started with current
-      // environment variables
-      //
-      // global modules are started with environment values
-      // defined in $HOME/etc/$PKG/defaults.json
-      //
-      var pkg_path;
-      var is_rel;
-
-      // this is a relative module
-      if (is_rel = is_relative(pkg)) {
-        pkg_path = pp.resolve(process.cwd(), pkg);
-        config.load(process.env);
-
-        // We leave the environment un-touched,
-        // except we make sure the node_modules/.bin
-        // directory is in the PATH and accssible to the module.
-        // To do otherwise would encourage strange behaviour
-        //
-        // we write logs to the current directory
-        config.load({
-          "PATH"   : "%{root}/node_modules/.bin : %{path}",
-          "LOGDIR" : process.cwd()
-        });
-      }
-
-      // this is a global module
-      else {
-        console.log()
-        pkg_path = pp.join(node_modules, pkg);
-
-        // load the default config first
-        // the package specific config can override default values
-        config.load(graceful(npaths('config_defaults')));
-        config.load(graceful(npaths('config_defaults_module', {package: pkg})));
-      }
-
-      // interpolated values for the environment variables
-      // each value is expanded wherever %{VAR} is found
-      // e.g. %{home} --> /home/jacob
-      //      %{user} --> jacob
-      var map    = mappings(root, pkg_path);
-      var interp = new Interp(map);
-      config.keys().forEach(function (key) {
-        var str = config.get(key);
-        console.log("%s=%s", key, interp.expand(str));
-      });
+      fmtenvs(run.env).pipe(process.stdout);
       break;
+
     case 'rm':
     case 'remove':
-      delete config[key];
-      fs.writeFileSync(cfg_path, JSON.stringify(config), 'utf-8');
+      npkgcfg.remove(key);
+      NPKGConfig.Save(defpath, npkgcfg);
       break;
+
     default:
       cfg_usage();
   }
 }
 
 if(controller[command]){
-  var target = process.argv[3];
-  if (command) controller[command](target);
-  else console.log('Please Specify Target');
-}else{
-  fs.createReadStream(__dirname + "/usage.txt").pipe(process.stdout);
+  var target = argv._[1];
+  try {
+    if (command) controller[command](target);
+    else console.log('Please Specify Target');
+  } catch (e) {
+    console.log(e.stack);
+    console.log(e.message);
+    process.exit(1);
+  }
+} else {
+  var usage = fs.createReadStream(__dirname + "/usage.txt")
+  usage.on('end', function () {
+    // printing usage is an error, unless you specifically asked for it
+    if (!argv.help) process.exit(2);
+  })
+  usage.pipe(process.stdout);
 }

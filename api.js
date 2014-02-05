@@ -15,7 +15,7 @@ API.prototype.start = function (key, job, options, callback) {
       'Content-Type': 'application/json'
     }
   }, function (res) {
-    callback(null, res);
+    callback(null, res.statusCode, res);
   });
   req.on('error', callback);
   req.write(JSON.stringify(job));
