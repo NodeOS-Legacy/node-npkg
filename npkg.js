@@ -3,7 +3,7 @@
 var os           = require('os');
 var fs           = require('fs');
 var pp           = require('path');
-var http         = require('http');
+var util         = require('util');
 var spawn        = require('child_process').spawn;
 
 var printf       = require('printf');
@@ -31,9 +31,6 @@ var command      = process.argv[2];
 var init_api     = new API('http://' + HOST + ':' + PORT);
 
 var root         = process.env.HOME;
-var node_modules = pp.join(root,'lib/node_modules');
-
-var CONFIG_ROOT  = process.env.HOME + '/etc';
 
 function mappings (pkg, root) {
   return {
@@ -45,10 +42,10 @@ function mappings (pkg, root) {
     hostname : os.hostname(),
     tmpdir   : os.tmpdir()
   };
-};
+}
 
 function Controller(){
-  
+  //
 }
 
 // is a module relative or global
@@ -130,8 +127,8 @@ function generateRunParameters(pkg) {
 
     // load the default config first
     // the package specific config can override default values
-    var config_defaults = npaths('config_defaults')
-    var module_defaults = npaths('config_defaults_module', {package: pkg})
+    var config_defaults = npaths('config_defaults');
+    var module_defaults = npaths('config_defaults_module', {package: pkg});
 
     config.load(graceful(config_defaults));
     config.load(graceful(module_defaults));
@@ -202,11 +199,11 @@ Controller.prototype.run = function (pkg) {
   proc.stdout.pipe(process.stdout);
   proc.stderr.pipe(process.stderr);
   
-  proc.on('exit', function (code, signal) {
+  proc.on('exit', function (code) {
     // exit with childs status code
     // or exit 51 in the event of a signal
     // because 51gnal looks like Signal
-    process.exit(code === null ? 51 : code)
+    process.exit(code === null ? 51 : code);
   });
 };
 
@@ -341,9 +338,9 @@ Controller.prototype.install = function(arg){
     if(err) return console.log("Error",err);
     npm.config.set('global',true);
     var conf = config(process.env.HOME + '/.npmrc');
-    for(var key in conf) {
+    Object.keys(conf).forEach(function (key) {
       npm.config.set(key, conf[key]);
-    }
+    });
     npm.commands.install(arg, function(err){
       if(err) {
         console.log(err);
@@ -393,12 +390,11 @@ function cfg_usage() {
   console.log("       npkg config [OPTS] list             list all config keys");
   console.log("       npkg config [OPTS] cat              list all key=value pairs");
   console.log("       npkg config        gen KEY          interpolate a config");
-  console.log("");
-  console.log("       OPTIONS");
-  console.log("");
+  console.log();
+  console.log("   OPTIONS");
+  console.log();
   console.log("       --name=NAME/-n NAME   name of package (or default)");
-  console.log("");
-  process.exit(1);
+  console.log();
 }
 
 var controller = new Controller();
@@ -425,13 +421,13 @@ Controller.prototype.config = function () {
   switch (subcmd) {
     case 'g':
     case 'get':
-      if (!key) throw new Error('Please Specify Key');
+      if (!key) throw new Error('Please Specify KEY');
       console.log(npkgcfg.get(key));
       break;
 
     case 's':
     case 'set':
-      if (!key) return cfg_usage();
+      if (!key) throw new Error('Please Specify KEY=VALUE');
 
       // let the user also use KEY=VAL style
       // e.g. npkg config set NAME=jacob
@@ -458,10 +454,9 @@ Controller.prototype.config = function () {
 
     case 'gen':
     case 'generate':
-      if (!key) return cfg_usage();
+      if (!key) throw new Error('Please Specify PACKAGE');
 
       var run = generateRunParameters(key);
-      var key = npkghash(key);
 
       fmtenvs(run.env).pipe(process.stdout);
       break;
@@ -475,7 +470,7 @@ Controller.prototype.config = function () {
     default:
       cfg_usage();
   }
-}
+};
 
 if(controller[command]){
   var target = argv._[1];
@@ -483,15 +478,14 @@ if(controller[command]){
     if (command) controller[command](target);
     else console.log('Please Specify Target');
   } catch (e) {
-    console.log(e.stack);
     console.log(e.message);
     process.exit(1);
   }
 } else {
-  var usage = fs.createReadStream(__dirname + "/usage.txt")
+  var usage = fs.createReadStream(__dirname + "/usage.txt");
   usage.on('end', function () {
     // printing usage is an error, unless you specifically asked for it
     if (!argv.help) process.exit(2);
-  })
+  });
   usage.pipe(process.stdout);
 }
