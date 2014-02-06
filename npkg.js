@@ -62,6 +62,8 @@ var NO  = '\033[92mNo\033[0m ';
 Controller.prototype.show = function () {
   var node_modules = npaths('node_modules');
 
+  console.log("\033[1mPackage              Has bin     Can start   Has test\033[0m");
+
   fs.readdirSync(node_modules).forEach(function (name) {
 
     var pkg  = pp.join(node_modules, name);
@@ -384,17 +386,7 @@ Controller.prototype.remove = function(){
 };
 
 function cfg_usage() {
-  console.log("Usage: npkg config [OPTS] get KEY          get a config value");
-  console.log("       npkg config [OPTS] set KEY=VAL      set a config value");
-  console.log("       npkg config [OPTS] rm KEY           remove config value");
-  console.log("       npkg config [OPTS] list             list all config keys");
-  console.log("       npkg config [OPTS] cat              list all key=value pairs");
-  console.log("       npkg config        gen KEY          interpolate a config");
-  console.log();
-  console.log("   OPTIONS");
-  console.log();
-  console.log("       --name=NAME/-n NAME   name of package (or default)");
-  console.log();
+  fs.createReadStream(__dirname + '/usage-config.txt', 'utf-8').pipe(process.stdout);
 }
 
 var controller = new Controller();
