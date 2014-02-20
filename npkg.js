@@ -25,7 +25,7 @@ var API          = require('./api.js');
 
 var argv         = optimist.argv;
 var PORT         = process.env.NPKG_PORT || process.env.PORT || 1;
-var HOST         = process.env.NPKG_HOST || process.env.HOST || '127.0.0.1';
+var HOST         = process.env.NPKG_BIND || process.env.BIND || '127.0.0.1';
 var command      = process.argv[2];
 
 var init_api     = new API('http://' + HOST + ':' + PORT);
