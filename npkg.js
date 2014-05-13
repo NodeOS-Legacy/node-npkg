@@ -108,7 +108,7 @@ function generateRunParameters(pkg) {
     // we write logs to the current directory
     config.load({
       // set expected service variables to current directory
-      // this is principle of least surprise, you shouldn't 
+      // this is principle of least surprise, you shouldn't
       // have to go searching the system for these directories
       "VARDIR"  : process.cwd(),
       "LOGDIR"  : process.cwd(),
@@ -168,14 +168,14 @@ function generateRunParameters(pkg) {
   });
 
   // make sure some directories exist
-  // part of the package/init contract is that 
+  // part of the package/init contract is that
   // a temp and var directory are available
-  // this seems like as good a time as any to 
+  // this seems like as good a time as any to
   // ensure these directories are here
   if (envs.VARDIR ) mkdirp(envs.VARDIR);
   if (envs.TEMPDIR) mkdirp(envs.TEMPDIR);
   if (envs.LOGDIR ) mkdirp(envs.LOGDIR);
-    
+
   // job stanza to be serialized as the request body
   var job = {
     exec : exec,
@@ -196,11 +196,11 @@ Controller.prototype.run = function (pkg) {
   // run the job as a child process
   // attach current stdio to child
   var proc = spawn(run.exec, run.args, run);
-  
+
   process.stdin.pipe(proc.stdin);
   proc.stdout.pipe(process.stdout);
   proc.stderr.pipe(process.stderr);
-  
+
   proc.on('exit', function (code) {
     // exit with childs status code
     // or exit 51 in the event of a signal
@@ -314,7 +314,7 @@ Controller.prototype.status = function (pkg) {
 function config(path){
   var configs = {};
   try {
-    var f = fs.readFileSync(path);  
+    var f = fs.readFileSync(path);
     f.trim().split(/\n/).forEach(function (line) {
       var split = line.trim().split(/\s*=\s*/);
       if(split.length<2) return;
@@ -326,7 +326,7 @@ function config(path){
   return configs;
 }
 
-Controller.prototype.i = 
+Controller.prototype.i =
 Controller.prototype.install = function(arg){
 
   if (!arg) return console.log('Install what?');
@@ -348,35 +348,6 @@ Controller.prototype.install = function(arg){
         console.log(err);
         process.exit(-1);
       }
-
-      // totally unsafe way to grab package.json
-      // i don't really mind blowing up here, it would be weird
-      // if package.json diesn't exist, or was incorrect
-      var pkg_json = JSON.parse(
-        fs.readFileSync(
-          pp.join(root, 'lib/node_modules', arg, 'package.json'), 'utf-8'
-        )
-      );
-
-      var pkg_config_dir  = pp.join(process.env.HOME, 'etc', arg);
-      var pkg_config_file = pp.join(pkg_config_dir, 'defaults.json');
-
-      var envs;
-      var config = graceful(pkg_config_file);
-
-      // setup environment properties
-      // add them to the config file on install
-      if (envs = pkg_json.environment) {
-        Object.keys(envs).forEach(function (key) {
-          if (!config[key]) config[key] = null;
-        });
-      }
-
-      // if all goes well, we create an empty config file
-      // in $HOME/etc/$PACKAGE/defaults.json
-      mkdirp(pkg_config_dir);
-      
-      fs.writeFileSync(pkg_config_file, JSON.stringify(config));
     });
   });
 };
