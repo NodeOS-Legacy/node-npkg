@@ -1,6 +1,6 @@
 {
   "name": "bin-npkg",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "description": "",
   "bin": {
     "npkg": "npkg.js"
