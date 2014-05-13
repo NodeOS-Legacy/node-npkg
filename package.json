@@ -1,13 +1,11 @@
 {
   "name": "bin-npkg",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "description": "",
   "bin": {
     "npkg": "npkg.js"
   },
-  "scripts": {
-    
-  },
+  "scripts": {},
   "repository": "",
   "author": "",
   "license": "MIT",
