@@ -12,17 +12,17 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "npm": "~1.3.11",
-    "optimist": "~0.6.0",
-    "lib-interpolate": "0.0.0",
+    "lib-cmdparse": "~0.1.0",
     "lib-config": "~0.1.0",
+    "lib-interpolate": "0.0.0",
     "lib-mkdirp": "0.0.0",
-    "lib-supervise": "0.0.2",
     "lib-modinfo": "0.0.0",
-    "printf": "~0.1.2",
-    "lib-npkg-resolve": "0.0.0",
     "lib-npkg-paths": "0.0.0",
-    "lib-cmdparse": "~0.1.0"
+    "lib-npkg-resolve": "0.0.0",
+    "lib-supervise": "0.0.2",
+    "npm": "^1.4.10",
+    "optimist": "~0.6.0",
+    "printf": "~0.1.2"
   },
   "peerDependencies": {
     "bin-init": "~0.1.0"
