@@ -6,7 +6,7 @@
     "npkg": "npkg.js"
   },
   "scripts": {
-    "postinstall": "node scripts/postinstall.js"
+    
   },
   "repository": "",
   "author": "",
