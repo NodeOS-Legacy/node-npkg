@@ -5,7 +5,9 @@
   "bin": {
     "npkg": "npkg.js"
   },
-  "scripts": {},
+  "scripts": {
+    "postinstall": "node scripts/postinstall.js"
+  },
   "repository": "",
   "author": "",
   "license": "MIT",
@@ -21,8 +23,5 @@
     "npm": "^1.4.10",
     "optimist": "~0.6.0",
     "printf": "~0.1.2"
-  },
-  "peerDependencies": {
-    "bin-init": "~0.1.0"
   }
 }
