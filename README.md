@@ -1,3 +1,9 @@
+# Obsolete, using [npm](http://npmjs.com) instead
+
+This repo will remain for reference purposses
+
+----
+
 # NodeOS Package Manager
 
 NodeOS uses NPM for package management, 
